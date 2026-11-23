@@ -155,9 +155,9 @@ function renderLamps() {
     return;
   }
   $("lamps").innerHTML = LIGHTS.map(l => {
-    const c = lampCfg(l.entity) || { enabled:false, zone:"all", brightness:100, max_hz: l.entity.includes("wled") ? 8 : 3 };
-    return `<tr data-id="${esc(l.entity)}"><td><input type="checkbox" class="en" ${c.enabled ? "checked" : ""}></td>
-      <td>${esc(l.name)}<small>${esc(l.entity)}${l.color ? "" : " · HA nie zgłasza koloru – może nie działać"}</small></td>
+    const c = lampCfg(l.entity_id) || { enabled:false, zone:"all", brightness:100, max_hz: l.entity_id.includes("wled") ? 8 : 3 };
+    return `<tr data-id="${esc(l.entity_id)}"><td><input type="checkbox" class="en" ${c.enabled ? "checked" : ""}></td>
+      <td>${esc(l.name)}<small>${esc(l.entity_id)}${l.color ? "" : " · HA nie zgłasza koloru – może nie działać"}</small></td>
       <td><select class="zone">${zoneOpts(c.zone)}</select></td>
       <td><input type="number" class="bri" min="10" max="200" step="10" value="${c.brightness ?? 100}" style="width:80px"></td>
       <td><input type="number" class="hz" min="0.5" max="20" step="0.5" value="${c.max_hz ?? 3}" style="width:80px"></td></tr>`;
