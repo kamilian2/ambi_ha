@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ambi HA – ustawienia</title>
+<style>
+  :root { --bg:#0b1722; --card:#13263a; --line:#21405c; --txt:#e8f1f8; --mut:#8fb0c8; --acc:#18bcf2; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--txt); }
+  header { padding:16px 22px; border-bottom:1px solid var(--line); display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
+  header h1 { margin:0; font-size:22px; }
+  #st { color:var(--mut); font-size:14px; flex:1; }
+  main { padding:0 22px 40px; max-width:1000px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 18px; margin-top:14px; }
+  .card h2 { margin:0 0 12px; font-size:17px; }
+  label.f { display:block; color:var(--mut); font-size:13px; margin:10px 0 4px; }
+  input[type=text], input[type=password], input[type=number], select {
+    background:#0d1d2c; color:var(--txt); border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:15px; width:100%;
+  }
+  button { background:#21405c; color:var(--txt); border:none; padding:9px 14px; border-radius:8px; cursor:pointer; font-size:14px; }
+  button.main { background:var(--acc); color:#04212e; font-weight:600; }
+  button.big { font-size:17px; padding:12px 22px; }
+  button.off { background:#e57373; color:#fff; }
+  .btns { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; align-items:center; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:10px 16px; }
+  .hint { color:var(--mut); font-size:13px; line-height:1.5; margin-top:8px; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  td, th { padding:6px 6px; border-top:1px solid #1a3149; text-align:left; vertical-align:middle; }
+  th { color:var(--mut); font-weight:500; border-top:none; }
+  td small { color:var(--mut); display:block; }
+  .wled { border:1px solid var(--line); border-radius:10px; padding:12px; margin-top:10px; }
+  .tvp { position:relative; width:320px; height:190px; margin:10px 0; }
+  .tvp .s { position:absolute; display:flex; gap:2px; }
+  .tvp .s div { flex:1; border-radius:3px; background:#333; }
+  .tvp .top { left:22px; right:22px; top:0; height:16px; } .tvp .bottom { left:22px; right:22px; bottom:0; height:16px; }
+  .tvp .left { left:0; top:22px; bottom:22px; width:16px; flex-direction:column-reverse; } .tvp .right { right:0; top:22px; bottom:22px; width:16px; flex-direction:column; }
+  .tvp .scr { position:absolute; left:24px; right:24px; top:24px; bottom:24px; background:#05090d; border-radius:6px; }
+  #toast { position:fixed; right:16px; bottom:16px; background:var(--acc); color:#04212e; padding:10px 14px; border-radius:8px; font-weight:600; opacity:0; transition:opacity .2s; max-width:80vw; }
+  #toast.show { opacity:1; } #toast.err { background:#e57373; color:#fff; }
+  pre { background:#0d1d2c; border:1px solid var(--line); border-radius:8px; padding:10px; overflow:auto; font-size:12.5px; }
+</style>
+</head>
+<body>
+<header><h1>Ambi HA</h1><span id="st"></span><button id="tog" class="main big" onclick="toggle()">…</button></header>
+<main>
+  <div class="card">
+    <h2>1. Telewizor (kolory Ambilight)</h2>
+    <div class="tvp"><div class="s top" id="p_top"></div><div class="s left" id="p_left"></div><div class="s right" id="p_right"></div><div class="s bottom" id="p_bottom"></div><div class="scr"></div></div>
+    <div class="hint" id="tvinfo"></div>
+    <div class="btns">
+      <button onclick="testTv()">Sprawdź połączenie z TV</button>
+      <button class="main" onclick="pairReq()">Paruj z telewizorem</button>
+      <input id="pin" type="text" placeholder="PIN z ekranu" style="width:140px">
+      <button onclick="pairGrant()">Potwierdź PIN</button>
+      <button onclick="forget()">Zapomnij parowanie</button>
+    </div>
+    <label class="f">Adres telewizora (127.0.0.1 = ten telewizor)</label>
+    <input id="tv_host" type="text" onchange="save({tv_host:this.value.trim()})">
+    <div class="hint">Nowsze telewizory Philips wymagają jednorazowego parowania: kliknij „Paruj”, na ekranie TV pojawi się 4-cyfrowy PIN, wpisz go tutaj i potwierdź. Podgląd powyżej pokazuje na żywo kolory, które liczy telewizor.</div>
+  </div>
+
+  <div class="card">
+    <h2>2. Home Assistant</h2>
+    <label class="f">Adres HA</label><input id="ha_url" type="text" placeholder="http://192.168.1.10:8123">
+    <label class="f">Token długoterminowy</label><input id="ha_token" type="password" placeholder="wklej token">
+    <div class="btns"><button class="main" onclick="saveHa()">Zapisz</button><button onclick="testHa()">Testuj</button></div>
+  </div>
+
+  <div class="card">
+    <h2>3. Lampy z Home Assistanta</h2>
+    <table><thead><tr><th>Używaj</th><th>Lampa</th><th>Strefa ekranu</th><th>Jasność %</th><th>Zmian/s</th></tr></thead><tbody id="lamps"></tbody></table>
+    <div class="hint">Strefa = z której części ekranu lampa bierze kolor. Lampy Zigbee: 2–4 zmiany/s (więcej zapcha sieć Zigbee), Wi-Fi: 4–8. Pokazane są lampy z kolorem; białe są pominięte.</div>
+  </div>
+
+  <div class="card">
+    <h2>4. Taśmy WLED (bezpośrednio, najszybciej)</h2>
+    <div id="wled"></div>
+    <div class="btns"><button onclick="addWled()">+ Dodaj taśmę WLED</button></div>
+    <div class="hint">W WLED: <b>Config → Sync Interfaces → Realtime: Receive UDP realtime</b> musi być włączone (domyślnie jest). „Dookoła ekranu” = taśma za telewizorem – podaj liczbę diod na każdej krawędzi i róg, od którego zaczyna się taśma. Jeśli kolory są odwrócone, zaznacz „Odwróć kierunek”.</div>
+  </div>
+
+  <div class="card">
+    <h2>5. Synchronizacja</h2>
+    <div class="grid">
+      <div><label class="f">Klatek na sekundę (1–30)</label><input type="number" id="fps" min="1" max="30"></div>
+      <div><label class="f">Jasność % (5–200)</label><input type="number" id="brightness" min="5" max="200" step="5"></div>
+      <div><label class="f">Nasycenie % (50–250)</label><input type="number" id="saturation" min="50" max="250" step="5"></div>
+      <div><label class="f">Wygładzanie % (0–95)</label><input type="number" id="smoothing" min="0" max="95" step="5"></div>
+      <div><label class="f">Wyłącz lampę poniżej jasności %</label><input type="number" id="min_brightness" min="0" max="50"></div>
+      <div><label class="f">Płynne przejście lamp HA (ms)</label><input type="number" id="transition" min="0" max="3000" step="50"></div>
+    </div>
+    <label class="f"><input type="checkbox" id="standby_stop"> Zatrzymaj, gdy telewizor jest w czuwaniu</label>
+    <label class="f"><input type="checkbox" id="restore"> Po zatrzymaniu przywróć lampom poprzedni stan</label>
+  </div>
+
+  <div class="card">
+    <h2>6. Włączanie z Home Assistanta</h2>
+    <pre id="haCode"></pre>
+  </div>
+</main>
+<div id="toast"></div>
+<script>
+let C = null, ZONES = [], LIGHTS = [];
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function toast(m, err) { const t = $("toast"); t.textContent = m; t.className = "show" + (err ? " err" : ""); clearTimeout(t._t); t._t = setTimeout(() => t.className = "", 3000); }
+async function api(path, body) {
+  const r = await fetch(path, body === undefined ? {} : { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) });
+  const j = await r.json().catch(() => ({ ok:false, error:"brak odpowiedzi" }));
+  if (!j.ok) toast(j.error || "Błąd", true);
+  return j;
+}
+async function save(p) { const j = await api("/settings", p); if (j.ok) { C = j.config; toast("Zapisano"); } return j; }
+
+const NUMS = ["fps","brightness","saturation","smoothing","min_brightness","transition"];
+async function load() {
+  const j = await api("/config"); if (!j.ok) return;
+  C = j.config; ZONES = j.zones;
+  $("tv_host").value = C.tv_host; $("ha_url").value = C.ha_url || "";
+  $("ha_token").placeholder = C.ha_token_set ? "zapisany – wklej nowy, aby zmienić" : "wklej token";
+  $("tvinfo").textContent = C.tv_paired ? "Telewizor sparowany." : "Telewizor niesparowany (jeśli „Sprawdź połączenie” działa, parowanie nie jest potrzebne).";
+  NUMS.forEach(k => { $(k).value = C[k]; $(k).onchange = () => save({ [k]: +$(k).value }); });
+  ["standby_stop","restore"].forEach(k => { $(k).checked = !!C[k]; $(k).onchange = () => save({ [k]: $(k).checked }); });
+  const ip = (j.ip && j.ip[0]) || "IP_TV";
+  $("haCode").textContent = `rest_command:\n  ambilight_lampy_wlacz:\n    url: "http://${ip}:5004/on"\n    method: POST\n  ambilight_lampy_wylacz:\n    url: "http://${ip}:5004/off"\n    method: POST\n  ambilight_lampy_przelacz:\n    url: "http://${ip}:5004/toggle"\n    method: POST`;
+  renderWled(); loadLights();
+}
+async function toggle() { await api(C.enabled ? "/off" : "/on", {}); C.enabled = !C.enabled; }
+
+// ---------- TV ----------
+async function testTv() { const j = await api("/test_tv", {}); if (j.ok) toast(j.message); }
+async function pairReq() { const j = await api("/pair/request", {}); if (j.ok) { toast(j.message); $("pin").focus(); } }
+async function pairGrant() { const j = await api("/pair/grant", { pin:$("pin").value.trim() }); if (j.ok) { toast(j.message); load(); } }
+async function forget() { await api("/pair/forget", {}); load(); }
+
+// ---------- HA ----------
+async function saveHa() { const j = await save({ ha_url:$("ha_url").value.trim(), ha_token:$("ha_token").value.trim() }); if (j.ok) { $("ha_token").value = ""; setTimeout(loadLights, 3000); } }
+async function testHa() { const j = await api("/test_ha", { url:$("ha_url").value.trim(), token:$("ha_token").value.trim() }); if (j.ok) toast("Połączono: " + j.message); }
+
+// ---------- lampy ----------
+async function loadLights() {
+  const j = await api("/lights"); if (!j.ok) return;
+  LIGHTS = j.lights.filter(l => l.color);
+  renderLamps();
+}
+function lampCfg(id) { return (C.lamps || []).find(l => l.entity === id); }
+function zoneOpts(v) { return ZONES.map(z => `<option value="${z.value}" ${z.value === v ? "selected" : ""}>${esc(z.name)}</option>`).join(""); }
+function renderLamps() {
+  if (!LIGHTS.length) { $("lamps").innerHTML = '<tr><td colspan="5">Brak lamp z kolorem – sprawdź połączenie z HA.</td></tr>'; return; }
+  $("lamps").innerHTML = LIGHTS.map(l => {
+    const c = lampCfg(l.entity) || { enabled:false, zone:"all", brightness:100, max_hz: l.entity.includes("wled") ? 8 : 3 };
+    return `<tr data-id="${esc(l.entity)}"><td><input type="checkbox" class="en" ${c.enabled ? "checked" : ""}></td>
+      <td>${esc(l.name)}<small>${esc(l.entity)}</small></td>
+      <td><select class="zone">${zoneOpts(c.zone)}</select></td>
+      <td><input type="number" class="bri" min="10" max="200" step="10" value="${c.brightness ?? 100}" style="width:80px"></td>
+      <td><input type="number" class="hz" min="0.5" max="20" step="0.5" value="${c.max_hz ?? 3}" style="width:80px"></td></tr>`;
+  }).join("");
+  document.querySelectorAll("#lamps tr").forEach(tr => tr.querySelectorAll("input,select").forEach(e => e.onchange = saveLamps));
+}
+function saveLamps() {
+  const list = [...document.querySelectorAll("#lamps tr[data-id]")].map(tr => ({
+    entity: tr.dataset.id, enabled: tr.querySelector(".en").checked, zone: tr.querySelector(".zone").value,
+    brightness: +tr.querySelector(".bri").value, max_hz: +tr.querySelector(".hz").value
+  })).filter(l => l.enabled || lampCfg(l.entity));
+  save({ lamps: list });
+}
+
+// ---------- WLED ----------
+function renderWled() {
+  const list = C.wled || [];
+  $("wled").innerHTML = list.map((w, i) => `<div class="wled" data-i="${i}"><div class="grid">
+    <div><label class="f">Adres IP taśmy</label><input type="text" class="host" value="${esc(w.host || "")}" placeholder="192.168.1.60"></div>
+    <div><label class="f">Tryb</label><select class="mode"><option value="zone" ${w.mode !== "around" ? "selected" : ""}>Jeden kolor ze strefy</option><option value="around" ${w.mode === "around" ? "selected" : ""}>Dookoła ekranu</option></select></div>
+    <div><label class="f">Strefa (tryb jednego koloru)</label><select class="zone">${zoneOpts(w.zone || "all")}</select></div>
+    <div><label class="f">Liczba diod (tryb jednego koloru)</label><input type="number" class="leds" value="${w.leds ?? 30}"></div>
+    <div><label class="f">Diody: lewa krawędź</label><input type="number" class="left" value="${w.left ?? 0}"></div>
+    <div><label class="f">Diody: góra</label><input type="number" class="top" value="${w.top ?? 0}"></div>
+    <div><label class="f">Diody: prawa krawędź</label><input type="number" class="right" value="${w.right ?? 0}"></div>
+    <div><label class="f">Diody: dół</label><input type="number" class="bottom" value="${w.bottom ?? 0}"></div>
+    <div><label class="f">Taśma zaczyna się w rogu</label><select class="start">
+      ${[["bottom_left","lewy dolny"],["top_left","lewy górny"],["top_right","prawy górny"],["bottom_right","prawy dolny"]].map(([v,n]) => `<option value="${v}" ${(w.start||"bottom_left") === v ? "selected" : ""}>${n}</option>`).join("")}</select></div>
+    <div><label class="f">Kierunek taśmy (patrząc na ekran)</label><select class="cw"><option value="1" ${w.clockwise !== false ? "selected" : ""}>zgodnie z ruchem wskazówek</option><option value="0" ${w.clockwise === false ? "selected" : ""}>przeciwnie</option></select></div>
+    <div><label class="f">Jasność %</label><input type="number" class="bri" value="${w.brightness ?? 100}" step="10"></div>
+    <div><label class="f">&nbsp;</label><label><input type="checkbox" class="flip" ${w.flip ? "checked" : ""}> Odwróć kierunek</label> &nbsp; <label><input type="checkbox" class="en" ${w.enabled !== false ? "checked" : ""}> Włączona</label></div>
+    </div><div class="btns"><button onclick="delWled(${i})">Usuń</button></div></div>`).join("") || '<div class="hint">Brak taśm WLED.</div>';
+  document.querySelectorAll("#wled .wled").forEach(d => d.querySelectorAll("input,select").forEach(e => e.onchange = saveWled));
+}
+function saveWled() {
+  const list = [...document.querySelectorAll("#wled .wled")].map(d => {
+    const v = c => d.querySelector("." + c);
+    return { host:v("host").value.trim(), mode:v("mode").value, zone:v("zone").value, leds:+v("leds").value,
+      left:+v("left").value, top:+v("top").value, right:+v("right").value, bottom:+v("bottom").value,
+      start:v("start").value, clockwise:v("cw").value === "1", brightness:+v("bri").value, flip:v("flip").checked, enabled:v("en").checked };
+  });
+  save({ wled:list });
+}
+function addWled() { C.wled = [...(C.wled || []), { host:"", mode:"around", left:0, top:0, right:0, bottom:0, enabled:true }]; renderWled(); }
+function delWled(i) { const l = [...C.wled]; l.splice(i, 1); C.wled = l; save({ wled:l }).then(renderWled); }
+
+// ---------- podgląd na żywo ----------
+async function poll() {
+  try {
+    const j = await (await fetch("/status")).json();
+    $("st").textContent = j.status + " · HA: " + j.ha;
+    $("tog").textContent = j.enabled ? "■ Wyłącz synchronizację" : "▶ Włącz synchronizację";
+    $("tog").className = "big " + (j.enabled ? "off" : "main");
+    if (C) C.enabled = j.enabled;
+    for (const side of ["top","left","right","bottom"]) {
+      const cols = (j.sides && j.sides[side]) || [];
+      const el = $("p_" + side);
+      if (el.children.length !== cols.length) el.innerHTML = cols.map(() => "<div></div>").join("");
+      cols.forEach((c, i) => el.children[i].style.background = c);
+    }
+  } catch (e) {}
+}
+load();
+setInterval(poll, 400);
+</script>
+</body>
+</html>
