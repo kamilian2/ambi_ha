@@ -41,6 +41,8 @@ class Config(ctx: Context) {
     val transition get() = i("transition", 300).coerceIn(0, 3000)
     val standbyStop get() = b("standby_stop", true)
     val restore get() = b("restore", true)
+    /** Szybki tryb: tylko kolor, bez zmiany jasności – jedno polecenie mniej dla żarówki. */
+    val fastMode get() = b("fast_mode", false)
 
     val lamps: List<JSONObject> get() = arr("lamps")
     val wled: List<JSONObject> get() = arr("wled")
@@ -70,6 +72,7 @@ class Config(ctx: Context) {
         it.put("tv_host", tvHost); it.put("enabled", enabled); it.put("fps", fps); it.put("brightness", brightness)
         it.put("saturation", saturation); it.put("smoothing", smoothing); it.put("min_brightness", minBrightness)
         it.put("transition", transition); it.put("standby_stop", standbyStop); it.put("restore", restore)
+        it.put("fast_mode", fastMode)
         if (!it.has("lamps")) it.put("lamps", JSONArray())
         if (!it.has("wled")) it.put("wled", JSONArray())
     }

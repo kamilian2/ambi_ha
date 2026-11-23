@@ -50,7 +50,10 @@ class Engine(private val cfg: Config, private val tv: JointSpace, private val ha
 
     // stan każdej lampy: wygładzony kolor, ostatnio wysłany, czas
     private class LampState(var r: Float = 0f, var g: Float = 0f, var b: Float = 0f,
-                            var sentRgb: IntArray? = null, var sentBri: Int = -1, var sentAt: Long = 0, var off: Boolean = false)
+                            var sentRgb: IntArray? = null, var sentBri: Int = -1, var sentAt: Long = 0, var off: Boolean = false) {
+        /** Polecenie wysłane, HA jeszcze nie potwierdził – nie wysyłamy kolejnego (bez kolejki = bez opóźnienia). */
+        @Volatile var inFlight = false
+    }
     private val lampStates = HashMap<String, LampState>()
     private val wledSmooth = HashMap<String, FloatArray>()
 
@@ -160,12 +163,15 @@ class Engine(private val cfg: Config, private val tv: JointSpace, private val ha
 
             val hz = lamp.optDouble("max_hz", 4.0).coerceIn(0.5, 20.0)
             if (now - st.sentAt < 1000 / hz) continue
+            // poprzednie polecenie jeszcze w drodze -> poczekaj, potem wyślij od razu najnowszy kolor
+            if (st.inFlight && now - st.sentAt < 2000) continue
 
             val mx = maxOf(st.r, st.g, st.b)
             val bri = (mx / 255f * 100).toInt()          // jasność w %
             if (bri < minBri) {
                 if (!st.off) {
-                    ha.callService("light", "turn_off", id, JSONObject().put("transition", transition))
+                    st.inFlight = true
+                    ha.callService("light", "turn_off", id, JSONObject().put("transition", transition)) { _, _ -> st.inFlight = false }
                     st.off = true; st.sentAt = now; st.sentBri = 0
                 }
                 continue
@@ -176,10 +182,11 @@ class Engine(private val cfg: Config, private val tv: JointSpace, private val ha
             val diff = if (prev == null) 999 else Math.abs(prev[0] - rgb[0]) + Math.abs(prev[1] - rgb[1]) + Math.abs(prev[2] - rgb[2])
             if (!st.off && diff < 12 && Math.abs(st.sentBri - bri) < 3 && now - st.sentAt < 10000) continue
 
-            ha.callService("light", "turn_on", id, JSONObject()
-                .put("rgb_color", JSONArray(rgb.toList()))
-                .put("brightness_pct", bri.coerceIn(1, 100))
-                .put("transition", transition))
+            val data = JSONObject().put("rgb_color", JSONArray(rgb.toList()))
+            if (!cfg.fastMode) data.put("brightness_pct", bri.coerceIn(1, 100))
+            if (transition > 0) data.put("transition", transition)
+            st.inFlight = true
+            ha.callService("light", "turn_on", id, data) { _, _ -> st.inFlight = false }
             st.sentRgb = rgb; st.sentBri = bri; st.sentAt = now; st.off = false
         }
     }

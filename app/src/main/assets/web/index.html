@@ -93,6 +93,8 @@
     </div>
     <label class="f"><input type="checkbox" id="standby_stop"> Zatrzymaj, gdy telewizor jest w czuwaniu</label>
     <label class="f"><input type="checkbox" id="restore"> Po zatrzymaniu przywróć lampom poprzedni stan</label>
+    <label class="f"><input type="checkbox" id="fast_mode"> Szybki tryb – wysyłaj tylko kolor (jasność lamp stała, żarówki Wi-Fi reagują szybciej)</label>
+    <div class="hint">Najszybsza reakcja: płynne przejście 0 ms, wygładzanie 0–20%, zmian/s przy lampie 10 (aplikacja i tak wysyła kolejny kolor dopiero, gdy żarówka potwierdzi poprzedni – bez kolejki i narastającego opóźnienia).</div>
   </div>
 
   <div class="card">
@@ -122,7 +124,7 @@ async function load() {
   $("ha_token").placeholder = C.ha_token_set ? "zapisany – wklej nowy, aby zmienić" : "wklej token";
   $("tvinfo").textContent = C.tv_paired ? "Telewizor sparowany." : "Telewizor niesparowany (jeśli „Sprawdź połączenie” działa, parowanie nie jest potrzebne).";
   NUMS.forEach(k => { $(k).value = C[k]; $(k).onchange = () => save({ [k]: +$(k).value }); });
-  ["standby_stop","restore"].forEach(k => { $(k).checked = !!C[k]; $(k).onchange = () => save({ [k]: $(k).checked }); });
+  ["standby_stop","restore","fast_mode"].forEach(k => { $(k).checked = !!C[k]; $(k).onchange = () => save({ [k]: $(k).checked }); });
   const ip = (j.ip && j.ip[0]) || "IP_TV";
   $("haCode").textContent = `rest_command:\n  ambilight_lampy_wlacz:\n    url: "http://${ip}:5004/on"\n    method: POST\n  ambilight_lampy_wylacz:\n    url: "http://${ip}:5004/off"\n    method: POST\n  ambilight_lampy_przelacz:\n    url: "http://${ip}:5004/toggle"\n    method: POST`;
   renderWled(); loadLights();
