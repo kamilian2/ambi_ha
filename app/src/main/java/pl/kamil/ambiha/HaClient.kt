@@ -157,6 +157,23 @@ class HaClient(private val cfg: Config) {
         if (!ok) done?.invoke(false, "brak połączenia z HA")
     }
 
+    /** Pobiera stany wszystkich encji przez REST (zapas, gdyby WebSocket ich nie dostarczył). Poza wątkiem głównym. */
+    fun fetchStatesRest(): Int {
+        val url = cfg.haUrl
+        val token = cfg.haToken
+        if (url.isEmpty() || token.isEmpty()) return 0
+        val req = Request.Builder().url("$url/api/states").header("Authorization", "Bearer $token").build()
+        http.newCall(req).execute().use { r ->
+            if (r.code != 200) throw IllegalStateException("HTTP ${r.code}")
+            val arr = JSONArray(r.body?.string() ?: "[]")
+            for (i in 0 until arr.length()) {
+                val st = arr.getJSONObject(i)
+                states[st.optString("entity_id")] = st
+            }
+            return arr.length()
+        }
+    }
+
     /** Sprawdzenie adresu i tokenu (wywoływać poza wątkiem głównym). */
     fun test(url: String, token: String): String {
         val req = Request.Builder().url(url.trimEnd('/') + "/api/")

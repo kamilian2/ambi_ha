@@ -31,7 +31,7 @@ class ApiServer(port: Int, private val ctx: Context, private val version: String
                         .put("zones", JSONArray(Engine.ZONES.map { JSONObject().put("value", it.first).put("name", it.second) }))
                         .put("ip", JSONArray(localIpAddresses())))
                     "/status" -> json(status())
-                    "/lights" -> json(ok().put("lights", lights()).put("ha_connected", app.ha.connected).put("ha", app.ha.status))
+                    "/lights" -> json(ok().put("lights", lights()).put("ha_connected", app.ha.connected).put("ha", app.ha.status).put("count", app.ha.states.size))
                     "/log" -> newFixedLengthResponse(Response.Status.OK, "text/plain; charset=utf-8",
                         lastCrash(ctx).ifEmpty { "Brak zapisanych błędów." })
                     else -> json(err("Nieznany adres"), Response.Status.NOT_FOUND)
@@ -79,6 +79,10 @@ class ApiServer(port: Int, private val ctx: Context, private val version: String
     /** Lampy z HA, które umieją kolor. */
     private fun lights(): JSONArray {
         val out = JSONArray()
+        // brak lamp na liście -> dociągnij stany bezpośrednio z HA
+        if (app.ha.states.keys.none { it.startsWith("light.") }) {
+            try { app.ha.fetchStatesRest() } catch (e: Exception) { android.util.Log.w("AmbiHa", "REST states: $e") }
+        }
         for ((id, s) in app.ha.states.entries.sortedBy { it.key }) {
             if (!id.startsWith("light.")) continue
             val a = s.optJSONObject("attributes") ?: JSONObject()
