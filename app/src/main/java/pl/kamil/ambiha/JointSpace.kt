@@ -85,7 +85,7 @@ class JointSpace(private val cfg: Config) {
             if (r.code != 401 || user == null) return r.code to (r.body?.string() ?: "")
             parseChallenge(r.header("WWW-Authenticate") ?: "")
         }
-        auth = digestHeader(method, uri, user, pass ?: "")
+        auth = digestHeader(method, uri, user ?: "", pass ?: "")
         http.newCall(build(auth)).execute().use { r -> return r.code to (r.body?.string() ?: "") }
     }
 
