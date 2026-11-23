@@ -70,7 +70,8 @@
   <div class="card">
     <h2>3. Lampy z Home Assistanta</h2>
     <table><thead><tr><th>Używaj</th><th>Lampa</th><th>Strefa ekranu</th><th>Jasność %</th><th>Zmian/s</th></tr></thead><tbody id="lamps"></tbody></table>
-    <div class="hint">Strefa = z której części ekranu lampa bierze kolor. Lampy Zigbee: 2–4 zmiany/s (więcej zapcha sieć Zigbee), Wi-Fi: 4–8. Pokazane są lampy z kolorem; białe są pominięte.</div>
+    <div class="btns"><button onclick="loadLights()">Odśwież listę lamp</button></div>
+    <div class="hint">Strefa = z której części ekranu lampa bierze kolor. Lampy Zigbee: 2–4 zmiany/s (więcej zapcha sieć Zigbee), Wi-Fi: 4–8. Na górze listy są lampy z kolorem.</div>
   </div>
 
   <div class="card">
@@ -101,7 +102,7 @@
 </main>
 <div id="toast"></div>
 <script>
-let C = null, ZONES = [], LIGHTS = [];
+let C = null, ZONES = [], LIGHTS = [], HA_OK = false, HA_STATUS = "";
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 function toast(m, err) { const t = $("toast"); t.textContent = m; t.className = "show" + (err ? " err" : ""); clearTimeout(t._t); t._t = setTimeout(() => t.className = "", 3000); }
@@ -141,17 +142,22 @@ async function testHa() { const j = await api("/test_ha", { url:$("ha_url").valu
 // ---------- lampy ----------
 async function loadLights() {
   const j = await api("/lights"); if (!j.ok) return;
-  LIGHTS = j.lights.filter(l => l.color);
+  // najpierw lampy z kolorem, potem pozostałe (np. gdy HA nie zgłasza trybu koloru)
+  LIGHTS = j.lights.sort((a, b) => (b.color - a.color) || a.name.localeCompare(b.name));
+  HA_OK = j.ha_connected; HA_STATUS = j.ha;
   renderLamps();
 }
 function lampCfg(id) { return (C.lamps || []).find(l => l.entity === id); }
 function zoneOpts(v) { return ZONES.map(z => `<option value="${z.value}" ${z.value === v ? "selected" : ""}>${esc(z.name)}</option>`).join(""); }
 function renderLamps() {
-  if (!LIGHTS.length) { $("lamps").innerHTML = '<tr><td colspan="5">Brak lamp z kolorem – sprawdź połączenie z HA.</td></tr>'; return; }
+  if (!LIGHTS.length) {
+    $("lamps").innerHTML = `<tr><td colspan="5">${HA_OK ? "Home Assistant nie zgłasza żadnych lamp (light.*)." : "Brak połączenia z Home Assistantem: " + esc(HA_STATUS) + "<br>Wpisz adres i token w sekcji 2 i kliknij Zapisz."}</td></tr>`;
+    return;
+  }
   $("lamps").innerHTML = LIGHTS.map(l => {
     const c = lampCfg(l.entity) || { enabled:false, zone:"all", brightness:100, max_hz: l.entity.includes("wled") ? 8 : 3 };
     return `<tr data-id="${esc(l.entity)}"><td><input type="checkbox" class="en" ${c.enabled ? "checked" : ""}></td>
-      <td>${esc(l.name)}<small>${esc(l.entity)}</small></td>
+      <td>${esc(l.name)}<small>${esc(l.entity)}${l.color ? "" : " · HA nie zgłasza koloru – może nie działać"}</small></td>
       <td><select class="zone">${zoneOpts(c.zone)}</select></td>
       <td><input type="number" class="bri" min="10" max="200" step="10" value="${c.brightness ?? 100}" style="width:80px"></td>
       <td><input type="number" class="hz" min="0.5" max="20" step="0.5" value="${c.max_hz ?? 3}" style="width:80px"></td></tr>`;

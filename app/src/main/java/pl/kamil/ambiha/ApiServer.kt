@@ -31,7 +31,7 @@ class ApiServer(port: Int, private val ctx: Context, private val version: String
                         .put("zones", JSONArray(Engine.ZONES.map { JSONObject().put("value", it.first).put("name", it.second) }))
                         .put("ip", JSONArray(localIpAddresses())))
                     "/status" -> json(status())
-                    "/lights" -> json(ok().put("lights", lights()))
+                    "/lights" -> json(ok().put("lights", lights()).put("ha_connected", app.ha.connected).put("ha", app.ha.status))
                     "/log" -> newFixedLengthResponse(Response.Status.OK, "text/plain; charset=utf-8",
                         lastCrash(ctx).ifEmpty { "Brak zapisanych błędów." })
                     else -> json(err("Nieznany adres"), Response.Status.NOT_FOUND)
