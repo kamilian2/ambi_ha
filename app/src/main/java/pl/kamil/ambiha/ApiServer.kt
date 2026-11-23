@@ -40,9 +40,12 @@ class ApiServer(port: Int, private val ctx: Context, private val version: String
             val j = readBody(session).let { if (it.isBlank()) JSONObject() else JSONObject(it) }
             when (uri) {
                 "/settings" -> { app.config.update(j); json(ok().put("config", app.config.masked())) }
-                "/on" -> { app.config.update(JSONObject().put("enabled", true)); json(ok()) }
-                "/off" -> { app.config.update(JSONObject().put("enabled", false)); json(ok()) }
-                "/toggle" -> { app.config.update(JSONObject().put("enabled", !app.config.enabled)); json(ok()) }
+                "/on" -> { app.config.update(JSONObject().put("enabled", true)); json(ok().put("enabled", true)) }
+                "/off" -> { app.config.update(JSONObject().put("enabled", false)); json(ok().put("enabled", false)) }
+                "/toggle" -> {
+                    val now = !app.config.enabled
+                    app.config.update(JSONObject().put("enabled", now)); json(ok().put("enabled", now))
+                }
                 "/test_ha" -> {
                     val url = j.optString("url", "").ifBlank { app.config.haUrl }.trim().trimEnd('/')
                     val token = j.optString("token", "").ifBlank { app.config.haToken }.trim()

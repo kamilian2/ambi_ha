@@ -92,7 +92,14 @@
       <div><label class="f">Płynne przejście lamp HA (ms)</label><input type="number" id="transition" min="0" max="3000" step="50"></div>
     </div>
     <label class="f"><input type="checkbox" id="standby_stop"> Zatrzymaj, gdy telewizor jest w czuwaniu</label>
-    <label class="f"><input type="checkbox" id="restore"> Po zatrzymaniu przywróć lampom poprzedni stan</label>
+    <div class="grid">
+      <div><label class="f">Po wyłączeniu synchronizacji lampy</label>
+        <select id="off_mode" onchange="save({off_mode:this.value})">
+          <option value="white">świecą na biało</option><option value="restore">wracają do poprzedniego stanu</option>
+          <option value="off">gasną</option><option value="none">zostają w ostatnim kolorze</option></select></div>
+      <div><label class="f">Barwa bieli (K, 2000–6500)</label><input type="number" id="white_kelvin" min="2000" max="6500" step="100"></div>
+      <div><label class="f">Jasność bieli %</label><input type="number" id="white_brightness" min="1" max="100" step="5"></div>
+    </div>
     <label class="f"><input type="checkbox" id="fast_mode"> Szybki tryb – wysyłaj tylko kolor (jasność lamp stała, żarówki Wi-Fi reagują szybciej)</label>
     <div class="hint">Najszybsza reakcja: płynne przejście 0 ms, wygładzanie 0–20%, zmian/s przy lampie 10 (aplikacja i tak wysyła kolejny kolor dopiero, gdy żarówka potwierdzi poprzedni – bez kolejki i narastającego opóźnienia).</div>
   </div>
@@ -116,7 +123,7 @@ async function api(path, body) {
 }
 async function save(p) { const j = await api("/settings", p); if (j.ok) { C = j.config; toast("Zapisano"); } return j; }
 
-const NUMS = ["fps","brightness","saturation","smoothing","min_brightness","transition"];
+const NUMS = ["fps","brightness","saturation","smoothing","min_brightness","transition","white_kelvin","white_brightness"];
 async function load() {
   const j = await api("/config"); if (!j.ok) return;
   C = j.config; ZONES = j.zones;
@@ -124,9 +131,10 @@ async function load() {
   $("ha_token").placeholder = C.ha_token_set ? "zapisany – wklej nowy, aby zmienić" : "wklej token";
   $("tvinfo").textContent = C.tv_paired ? "Telewizor sparowany." : "Telewizor niesparowany (jeśli „Sprawdź połączenie” działa, parowanie nie jest potrzebne).";
   NUMS.forEach(k => { $(k).value = C[k]; $(k).onchange = () => save({ [k]: +$(k).value }); });
-  ["standby_stop","restore","fast_mode"].forEach(k => { $(k).checked = !!C[k]; $(k).onchange = () => save({ [k]: $(k).checked }); });
+  $("off_mode").value = C.off_mode;
+  ["standby_stop","fast_mode"].forEach(k => { $(k).checked = !!C[k]; $(k).onchange = () => save({ [k]: $(k).checked }); });
   const ip = (j.ip && j.ip[0]) || "IP_TV";
-  $("haCode").textContent = `rest_command:\n  ambilight_lampy_wlacz:\n    url: "http://${ip}:5004/on"\n    method: POST\n  ambilight_lampy_wylacz:\n    url: "http://${ip}:5004/off"\n    method: POST\n  ambilight_lampy_przelacz:\n    url: "http://${ip}:5004/toggle"\n    method: POST`;
+  $("haCode").textContent = `rest_command:\n  ambilight_lampy_wlacz:\n    url: "http://${ip}:5004/on"\n    method: POST\n  ambilight_lampy_wylacz:\n    url: "http://${ip}:5004/off"\n    method: POST\n  ambilight_lampy_przelacz:\n    url: "http://${ip}:5004/toggle"\n    method: POST\n\n# Przycisk pilota: w aplikacji TV Nakładka (http://${ip}:5002 → Pilot i kamery)\n# wybierz akcję „Ambi HA: przełącz lampy”.`;
   renderWled(); loadLights();
 }
 async function toggle() { await api(C.enabled ? "/off" : "/on", {}); C.enabled = !C.enabled; }

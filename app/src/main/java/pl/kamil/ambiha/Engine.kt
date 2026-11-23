@@ -196,7 +196,7 @@ class Engine(private val cfg: Config, private val tv: JointSpace, private val ha
         lampStates.clear()
         // zapamiętaj stan lamp, żeby przywrócić go po zakończeniu
         val ids = cfg.lamps.filter { it.optBoolean("enabled", true) }.map { it.optString("entity") }.filter { it.isNotBlank() }
-        if (cfg.restore && ids.isNotEmpty() && ha.connected) {
+        if (cfg.offMode == "restore" && ids.isNotEmpty() && ha.connected) {
             ha.callService("scene", "create", null, JSONObject().put("scene_id", BACKUP_SCENE)
                 .put("snapshot_entities", JSONArray(ids)))
         }
@@ -204,8 +204,22 @@ class Engine(private val cfg: Config, private val tv: JointSpace, private val ha
 
     private fun stopSync() {
         wasActive = false
-        if (cfg.restore && cfg.lamps.isNotEmpty() && ha.connected) {
-            ha.callService("scene", "turn_on", "scene.$BACKUP_SCENE", JSONObject().put("transition", 1))
+        if (ha.connected && cfg.lamps.isNotEmpty()) {
+            when (cfg.offMode) {
+                // po wyłączeniu: białe światło pełną mocą
+                "white" -> for (lamp in cfg.lamps) {
+                    if (!lamp.optBoolean("enabled", true)) continue
+                    val id = lamp.optString("entity")
+                    if (id.isBlank()) continue
+                    ha.callService("light", "turn_on", id, JSONObject()
+                        .put("color_temp_kelvin", cfg.whiteKelvin).put("brightness_pct", cfg.whiteBrightness))
+                }
+                "restore" -> ha.callService("scene", "turn_on", "scene.$BACKUP_SCENE", JSONObject().put("transition", 1))
+                "off" -> for (lamp in cfg.lamps) {
+                    val id = lamp.optString("entity")
+                    if (id.isNotBlank() && lamp.optBoolean("enabled", true)) ha.callService("light", "turn_off", id)
+                }
+            }
         }
         // WLED wraca sam do swojego efektu po kilku sekundach bez danych
         preview = emptyMap()
