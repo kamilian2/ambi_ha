@@ -34,6 +34,18 @@ class App : Application() {
         ha.connect()
         engine.start()
         startServer()
+        try { startSyncService(this) } catch (e: Exception) { Log.w("AmbiHa", "service: $e") }
+        scheduleWatchdog()
+    }
+
+    /** Co 15 min budzi aplikację, gdyby system ją zamknął (telewizor w czuwaniu nie robi pełnego restartu). */
+    private fun scheduleWatchdog() {
+        val am = getSystemService(ALARM_SERVICE) as android.app.AlarmManager
+        val pi = android.app.PendingIntent.getBroadcast(this, 1,
+            android.content.Intent(this, BootReceiver::class.java).setAction("pl.kamil.ambiha.WATCHDOG"),
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE)
+        am.setInexactRepeating(android.app.AlarmManager.ELAPSED_REALTIME,
+            android.os.SystemClock.elapsedRealtime() + 15 * 60_000L, android.app.AlarmManager.INTERVAL_FIFTEEN_MINUTES, pi)
     }
 
     fun startServer() {
