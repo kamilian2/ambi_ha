@@ -53,6 +53,18 @@ class ApiServer(port: Int, private val ctx: Context, private val version: String
                     json(ok().put("message", app.ha.test(url, token)))
                 }
                 "/test_tv" -> json(ok().put("message", app.tv.test()))
+                "/tuya_test" -> {
+                    // dane z formularza; brak klucza = zapisany
+                    val ent = j.optString("entity")
+                    if (j.optString("tuya_key").isBlank()) {
+                        app.config.snapshot().optJSONArray("lamps")?.let { arr ->
+                            for (i in 0 until arr.length()) arr.optJSONObject(i)?.let {
+                                if (it.optString("entity") == ent) j.put("tuya_key", it.optString("tuya_key"))
+                            }
+                        }
+                    }
+                    json(ok().put("message", app.engine.tuyaTest(j)))
+                }
                 "/pair/request" -> json(ok().put("message", app.tv.pairRequest()))
                 "/pair/grant" -> json(ok().put("message", app.tv.pairGrant(j.optString("pin"))))
                 "/pair/forget" -> {
@@ -77,6 +89,7 @@ class ApiServer(port: Int, private val ctx: Context, private val version: String
         return ok().put("enabled", app.config.enabled).put("running", e.running).put("status", e.status)
             .put("ha", app.ha.status).put("ha_connected", app.ha.connected)
             .put("preview", JSONObject(e.preview as Map<*, *>)).put("sides", sides)
+            .put("tuya", JSONObject(e.tuyaStatus() as Map<*, *>))
     }
 
     /** Lampy z HA, które umieją kolor. */

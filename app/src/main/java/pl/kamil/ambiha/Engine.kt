@@ -148,7 +148,6 @@ class Engine(private val cfg: Config, private val tv: JointSpace, private val ha
     // ---------------- lampy Home Assistanta ----------------
 
     private fun sendLamps(s: Map<String, List<IntArray>>, now: Long) {
-        if (!ha.connected) return
         val k = cfg.smoothing / 100f
         val transition = cfg.transition / 1000.0
         val minBri = cfg.minBrightness
@@ -160,6 +159,16 @@ class Engine(private val cfg: Config, private val tv: JointSpace, private val ha
             val c = process(raw, lamp.optInt("brightness", 100))
             val st = lampStates.getOrPut(id) { LampState(c[0], c[1], c[2]) }
             st.r = st.r * k + c[0] * (1 - k); st.g = st.g * k + c[1] * (1 - k); st.b = st.b * k + c[2] * (1 - k)
+
+            // bezpośrednio do żarówki Tuya – najnowszy kolor, bez czekania na HA
+            if (lamp.optString("method") == "tuya") {
+                val w = tuyaWorker(lamp) ?: continue
+                val mx = maxOf(st.r, st.g, st.b)
+                if (mx / 255f * 100 < minBri) w.offer(intArrayOf(0, 0, 0))
+                else w.offer(intArrayOf(st.r.toInt(), st.g.toInt(), st.b.toInt()))
+                continue
+            }
+            if (!ha.connected) continue
 
             val hz = lamp.optDouble("max_hz", 4.0).coerceIn(0.5, 20.0)
             if (now - st.sentAt < 1000 / hz) continue
@@ -191,6 +200,85 @@ class Engine(private val cfg: Config, private val tv: JointSpace, private val ha
         }
     }
 
+    // ---------------- Tuya bezpośrednio ----------------
+
+    /** Osobny wątek na żarówkę: zawsze wysyła tylko najnowszy kolor (bez kolejki). */
+    inner class TuyaWorker(val sig: String, val dev: TuyaDevice, private val smooth: Boolean, private val maxHz: Double) {
+        private val lock = Object()
+        private var pending: IntArray? = null
+        private var lastSent: IntArray? = null
+        @Volatile private var alive = true
+        @Volatile var status = "łączenie…"
+        private val thread = Thread {
+            while (alive) {
+                var c: IntArray? = null
+                synchronized(lock) {
+                    while (pending == null && alive) lock.wait(1000)
+                    c = pending; pending = null
+                }
+                val col = c ?: continue
+                val prev = lastSent
+                if (prev != null && Math.abs(prev[0] - col[0]) + Math.abs(prev[1] - col[1]) + Math.abs(prev[2] - col[2]) < 6) continue
+                val t0 = System.currentTimeMillis()
+                val ok = if (col[0] + col[1] + col[2] == 0) dev.turnOff() else dev.setColor(col[0], col[1], col[2], smooth)
+                if (ok) {
+                    lastSent = col
+                    status = "OK – protokół ${dev.version}, ${System.currentTimeMillis() - t0} ms"
+                } else {
+                    status = dev.lastError.ifBlank { "brak połączenia" }
+                    try { Thread.sleep(500) } catch (_: Exception) {}
+                }
+                val gap = (1000 / maxHz).toLong() - (System.currentTimeMillis() - t0)
+                if (gap > 0) try { Thread.sleep(gap) } catch (_: Exception) {}
+            }
+        }.apply { isDaemon = true; start() }
+
+        fun offer(c: IntArray) { synchronized(lock) { pending = c; lock.notifyAll() } }
+        fun resetLast() { lastSent = null }
+        fun stop() { alive = false; synchronized(lock) { lock.notifyAll() }; dev.close() }
+    }
+
+    private val tuyaWorkers = java.util.concurrent.ConcurrentHashMap<String, TuyaWorker>()
+
+    private fun tuyaSig(l: JSONObject) = listOf("tuya_ip", "tuya_id", "tuya_key", "tuya_ver", "tuya_dp", "tuya_smooth", "max_hz")
+        .joinToString("|") { l.optString(it) }
+
+    private fun tuyaWorker(l: JSONObject): TuyaWorker? {
+        val id = l.optString("entity")
+        val ip = l.optString("tuya_ip").trim()
+        if (ip.isEmpty() || l.optString("tuya_id").isBlank() || l.optString("tuya_key").isBlank()) return null
+        val sig = tuyaSig(l)
+        tuyaWorkers[id]?.let { if (it.sig == sig) return it else { it.stop(); tuyaWorkers.remove(id) } }
+        val dev = TuyaDevice(ip, l.optString("tuya_id").trim(), l.optString("tuya_key"), l.optString("tuya_ver", "auto"),
+            l.optString("tuya_dp", "28"))
+        return TuyaWorker(sig, dev, l.optBoolean("tuya_smooth", false), l.optDouble("max_hz", 15.0).coerceIn(1.0, 30.0))
+            .also { tuyaWorkers[id] = it }
+    }
+
+    /** Stan bezpośrednich połączeń (do strony): encja -> opis. */
+    fun tuyaStatus(): Map<String, String> = tuyaWorkers.mapValues { it.value.status }
+
+    /** Test z poziomu strony: czerwony na 1 s, potem biel. */
+    fun tuyaTest(l: JSONObject): String {
+        val dev = TuyaDevice(l.optString("tuya_ip").trim(), l.optString("tuya_id").trim(), l.optString("tuya_key"),
+            l.optString("tuya_ver", "auto"), l.optString("tuya_dp", "28"))
+        try {
+            // zwolnij ewentualne połączenie synchronizacji
+            tuyaWorkers.remove(l.optString("entity"))?.stop()
+            if (!dev.ensureConnected()) throw IllegalStateException(dev.lastError)
+            val t0 = System.currentTimeMillis()
+            if (!dev.setColor(255, 0, 0, false)) throw IllegalStateException(dev.lastError)
+            val ms = System.currentTimeMillis() - t0
+            Thread.sleep(1200)
+            dev.setColor(0, 0, 255, false)
+            Thread.sleep(1200)
+            dev.setWhite(cfg.whiteBrightness, cfg.whiteKelvin)
+            return "Połączono (protokół ${dev.version}), polecenie w $ms ms – żarówka powinna mignąć na czerwono i niebiesko."
+        } finally {
+            dev.close()
+        }
+    }
+
     private fun startSync() {
         wasActive = true
         lampStates.clear()
@@ -204,20 +292,38 @@ class Engine(private val cfg: Config, private val tv: JointSpace, private val ha
 
     private fun stopSync() {
         wasActive = false
-        if (ha.connected && cfg.lamps.isNotEmpty()) {
+        // żarówki sterowane bezpośrednio: biel / wyłączenie wysyłamy sami, potem zwalniamy połączenie dla HA
+        for (lamp in cfg.lamps) {
+            if (lamp.optString("method") != "tuya" || !lamp.optBoolean("enabled", true)) continue
+            val w = tuyaWorkers.remove(lamp.optString("entity")) ?: continue
+            Thread {
+                try {
+                    when (cfg.offMode) {
+                        "white" -> w.dev.setWhite(cfg.whiteBrightness, cfg.whiteKelvin)
+                        "off" -> w.dev.turnOff()
+                    }
+                } catch (_: Exception) {}
+                w.stop()
+            }.start()
+        }
+        if (ha.connected && cfg.lamps.any { it.optString("method") != "tuya" } ||
+            (ha.connected && cfg.offMode == "restore")) {
             when (cfg.offMode) {
                 // po wyłączeniu: białe światło pełną mocą
                 "white" -> for (lamp in cfg.lamps) {
-                    if (!lamp.optBoolean("enabled", true)) continue
+                    if (!lamp.optBoolean("enabled", true) || lamp.optString("method") == "tuya") continue
                     val id = lamp.optString("entity")
                     if (id.isBlank()) continue
                     ha.callService("light", "turn_on", id, JSONObject()
                         .put("color_temp_kelvin", cfg.whiteKelvin).put("brightness_pct", cfg.whiteBrightness))
                 }
-                "restore" -> ha.callService("scene", "turn_on", "scene.$BACKUP_SCENE", JSONObject().put("transition", 1))
+                "restore" -> exec.schedule({
+                    ha.callService("scene", "turn_on", "scene.$BACKUP_SCENE", JSONObject().put("transition", 1))
+                }, if (cfg.lamps.any { it.optString("method") == "tuya" }) 6L else 0L, TimeUnit.SECONDS)
                 "off" -> for (lamp in cfg.lamps) {
                     val id = lamp.optString("entity")
-                    if (id.isNotBlank() && lamp.optBoolean("enabled", true)) ha.callService("light", "turn_off", id)
+                    if (id.isNotBlank() && lamp.optBoolean("enabled", true) && lamp.optString("method") != "tuya")
+                        ha.callService("light", "turn_off", id)
                 }
             }
         }

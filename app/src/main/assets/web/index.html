@@ -69,8 +69,9 @@
 
   <div class="card">
     <h2>3. Lampy z Home Assistanta</h2>
-    <table><thead><tr><th>Używaj</th><th>Lampa</th><th>Strefa ekranu</th><th>Jasność %</th><th>Zmian/s</th></tr></thead><tbody id="lamps"></tbody></table>
+    <table><thead><tr><th>Używaj</th><th>Lampa</th><th>Strefa ekranu</th><th>Jasność %</th><th>Zmian/s</th><th>Sterowanie</th></tr></thead><tbody id="lamps"></tbody></table>
     <div class="btns"><button onclick="loadLights()">Odśwież listę lamp</button></div>
+    <div class="hint"><b>Bezpośrednio (Tuya)</b> – kolory idą prosto do żarówki w sieci Wi-Fi, z pominięciem HA (najszybciej, do ~15 zmian/s). Dane znajdziesz w HA: Ustawienia → Urządzenia i usługi → Tuya Local → żarówka → Konfiguruj (IP, device ID, local key, wersja protokołu). Podczas synchronizacji HA może chwilowo pokazywać żarówkę jako niedostępną – po wyłączeniu wraca sama.</div>
     <div class="hint">Strefa = z której części ekranu lampa bierze kolor. Lampy Zigbee: 2–4 zmiany/s (więcej zapcha sieć Zigbee), Wi-Fi: 4–8. Na górze listy są lampy z kolorem.</div>
   </div>
 
@@ -161,24 +162,55 @@ function lampCfg(id) { return (C.lamps || []).find(l => l.entity === id); }
 function zoneOpts(v) { return ZONES.map(z => `<option value="${z.value}" ${z.value === v ? "selected" : ""}>${esc(z.name)}</option>`).join(""); }
 function renderLamps() {
   if (!LIGHTS.length) {
-    $("lamps").innerHTML = `<tr><td colspan="5">${HA_OK ? "Home Assistant nie zgłasza żadnych lamp (light.*). Encji odczytanych z HA: " + LIGHTS_COUNT : "Brak połączenia z Home Assistantem: " + esc(HA_STATUS) + "<br>Wpisz adres i token w sekcji 2 i kliknij Zapisz."}</td></tr>`;
+    $("lamps").innerHTML = `<tr><td colspan="6">${HA_OK ? "Home Assistant nie zgłasza żadnych lamp (light.*). Encji odczytanych z HA: " + LIGHTS_COUNT : "Brak połączenia z Home Assistantem: " + esc(HA_STATUS) + "<br>Wpisz adres i token w sekcji 2 i kliknij Zapisz."}</td></tr>`;
     return;
   }
   $("lamps").innerHTML = LIGHTS.map(l => {
-    const c = lampCfg(l.entity_id) || { enabled:false, zone:"all", brightness:100, max_hz: l.entity_id.includes("wled") ? 8 : 3 };
+    const c = lampCfg(l.entity_id) || { enabled:false, zone:"all", brightness:100, max_hz:3, method:"ha" };
+    const tuya = c.method === "tuya";
     return `<tr data-id="${esc(l.entity_id)}"><td><input type="checkbox" class="en" ${c.enabled ? "checked" : ""}></td>
       <td>${esc(l.name)}<small>${esc(l.entity_id)}${l.color ? "" : " · HA nie zgłasza koloru – może nie działać"}</small></td>
       <td><select class="zone">${zoneOpts(c.zone)}</select></td>
       <td><input type="number" class="bri" min="10" max="200" step="10" value="${c.brightness ?? 100}" style="width:80px"></td>
-      <td><input type="number" class="hz" min="0.5" max="20" step="0.5" value="${c.max_hz ?? 3}" style="width:80px"></td></tr>`;
+      <td><input type="number" class="hz" min="0.5" max="30" step="0.5" value="${c.max_hz ?? 3}" style="width:80px"></td>
+      <td><select class="method"><option value="ha" ${!tuya ? "selected" : ""}>przez HA</option><option value="tuya" ${tuya ? "selected" : ""}>bezpośrednio (Tuya)</option></select></td></tr>
+      <tr class="tuyarow" data-for="${esc(l.entity_id)}" style="${tuya ? "" : "display:none"}"><td></td><td colspan="5">
+        <div class="grid">
+          <div><label class="f">IP żarówki</label><input type="text" class="tip" value="${esc(c.tuya_ip || "")}" placeholder="192.168.1.70"></div>
+          <div><label class="f">ID urządzenia (device ID)</label><input type="text" class="tid" value="${esc(c.tuya_id || "")}"></div>
+          <div><label class="f">Local key</label><input type="password" class="tkey" placeholder="${c.tuya_key_set ? "zapisany – wpisz nowy, aby zmienić" : "wklej local key"}"></div>
+          <div><label class="f">Protokół</label><select class="tver">${["auto","3.3","3.4","3.5"].map(v => `<option ${(c.tuya_ver || "auto") === v ? "selected" : ""}>${v}</option>`).join("")}</select></div>
+          <div><label class="f">Sposób zmiany koloru</label><select class="tdp"><option value="28" ${(c.tuya_dp || "28") === "28" ? "selected" : ""}>szybki (DP 28, jak muzyka)</option><option value="24" ${c.tuya_dp === "24" ? "selected" : ""}>zwykły (DP 24)</option></select></div>
+          <div><label class="f">&nbsp;</label><label><input type="checkbox" class="tsm" ${c.tuya_smooth ? "checked" : ""}> płynne przejście w żarówce</label></div>
+        </div>
+        <div class="btns"><button class="ttest">Test połączenia (mignie)</button><span class="hint tst" style="margin:0"></span></div>
+      </td></tr>`;
   }).join("");
   document.querySelectorAll("#lamps tr").forEach(tr => tr.querySelectorAll("input,select").forEach(e => e.onchange = saveLamps));
+  document.querySelectorAll("#lamps .method").forEach(sel => sel.addEventListener("change", () => {
+    const id = sel.closest("tr").dataset.id;
+    document.querySelector(`tr.tuyarow[data-for="${CSS.escape(id)}"]`).style.display = sel.value === "tuya" ? "" : "none";
+  }));
+  document.querySelectorAll("#lamps .ttest").forEach(btn => btn.onclick = async () => {
+    const row = btn.closest("tr"), id = row.dataset.for, out = row.querySelector(".tst");
+    out.textContent = "Łączenie…";
+    const j = await api("/tuya_test", Object.assign({ entity:id }, tuyaFields(row)));
+    out.textContent = j.ok ? j.message : ("Błąd: " + j.error);
+  });
+}
+function tuyaFields(row) {
+  const v = c => row.querySelector("." + c);
+  return { tuya_ip:v("tip").value.trim(), tuya_id:v("tid").value.trim(), tuya_key:v("tkey").value.trim(),
+    tuya_ver:v("tver").value, tuya_dp:v("tdp").value, tuya_smooth:v("tsm").checked };
 }
 function saveLamps() {
-  const list = [...document.querySelectorAll("#lamps tr[data-id]")].map(tr => ({
-    entity: tr.dataset.id, enabled: tr.querySelector(".en").checked, zone: tr.querySelector(".zone").value,
-    brightness: +tr.querySelector(".bri").value, max_hz: +tr.querySelector(".hz").value
-  })).filter(l => l.enabled || lampCfg(l.entity));
+  const list = [...document.querySelectorAll("#lamps tr[data-id]")].map(tr => {
+    const id = tr.dataset.id, t = document.querySelector(`tr.tuyarow[data-for="${CSS.escape(id)}"]`);
+    return Object.assign({
+      entity: id, enabled: tr.querySelector(".en").checked, zone: tr.querySelector(".zone").value,
+      brightness: +tr.querySelector(".bri").value, max_hz: +tr.querySelector(".hz").value, method: tr.querySelector(".method").value
+    }, tuyaFields(t));
+  }).filter(l => l.enabled || lampCfg(l.entity));
   save({ lamps: list });
 }
 
@@ -222,6 +254,10 @@ async function poll() {
     $("tog").textContent = j.enabled ? "■ Wyłącz synchronizację" : "▶ Włącz synchronizację";
     $("tog").className = "big " + (j.enabled ? "off" : "main");
     if (C) C.enabled = j.enabled;
+    for (const [id, st] of Object.entries(j.tuya || {})) {
+      const r = document.querySelector(`tr.tuyarow[data-for="${CSS.escape(id)}"] .tst`);
+      if (r && !r.textContent.startsWith("Łączenie")) r.textContent = "Synchronizacja: " + st;
+    }
     for (const side of ["top","left","right","bottom"]) {
       const cols = (j.sides && j.sides[side]) || [];
       const el = $("p_" + side);

@@ -59,6 +59,20 @@ class Config(ctx: Context) {
     /** Zmienia podane pola; pusty token nie kasuje zapisanego. */
     fun update(patch: JSONObject) {
         synchronized(this) {
+            // klucze Tuya nie wracają na stronę – puste pole = zostaw zapisany klucz
+            patch.optJSONArray("lamps")?.let { arr ->
+                val old = data.optJSONArray("lamps") ?: JSONArray()
+                for (i in 0 until arr.length()) {
+                    val l = arr.optJSONObject(i) ?: continue
+                    l.remove("tuya_key_set")
+                    if (l.optString("tuya_key").isBlank()) {
+                        for (j in 0 until old.length()) {
+                            val o = old.optJSONObject(j) ?: continue
+                            if (o.optString("entity") == l.optString("entity")) l.put("tuya_key", o.optString("tuya_key"))
+                        }
+                    }
+                }
+            }
             for (k in patch.keys()) {
                 if (k == "ha_token" && patch.optString(k).isBlank()) continue
                 if (k.endsWith("_set")) continue
@@ -79,6 +93,11 @@ class Config(ctx: Context) {
         it.put("fast_mode", fastMode); it.put("off_mode", offMode)
         it.put("white_kelvin", whiteKelvin); it.put("white_brightness", whiteBrightness)
         if (!it.has("lamps")) it.put("lamps", JSONArray())
+        it.optJSONArray("lamps")?.let { arr ->
+            for (i in 0 until arr.length()) arr.optJSONObject(i)?.let { l ->
+                l.put("tuya_key_set", l.optString("tuya_key").isNotBlank()); l.put("tuya_key", "")
+            }
+        }
         if (!it.has("wled")) it.put("wled", JSONArray())
     }
 }
